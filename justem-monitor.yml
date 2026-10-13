@@ -1,0 +1,50 @@
+name: justem-monitor
+
+# KST 09:00-20:00 = UTC 00:00-11:00 (한국은 서머타임 없음). 평일만.
+# GitHub Actions cron은 UTC 기준이며, 부하 시 수 분 지연될 수 있습니다.
+on:
+  schedule:
+    - cron: '*/5 0-11 * * 1-5'   # 평일 5분 간격 (레포가 private이면 '*/10' 권장 - Actions 분 절약)
+  workflow_dispatch: {}          # 수동 실행(테스트)용
+
+permissions:
+  contents: read
+
+# 동시 실행 방지(상태 파일 충돌 방지)
+concurrency:
+  group: justem-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore state (실행 간 상태 복원)
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: justem-state-${{ github.run_id }}
+          restore-keys: |
+            justem-state-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run monitor (가격 확인 + 텔레그램 알림)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # 필요 시 포지션 값도 Secrets로 관리 가능:
+          # BUY_PRICE: ${{ secrets.BUY_PRICE }}
+          # SHARES: ${{ secrets.SHARES }}
+        run: python monitor_gha.py
+
+      - name: Save state (상태 저장)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: justem-state-${{ github.run_id }}
